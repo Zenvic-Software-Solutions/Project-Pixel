@@ -30,7 +30,6 @@
         #result {
             font-size: 16px;
             font-weight: bold;
-            color: #28a745;
             margin-top: 10px;
         }
         .loader {
@@ -46,6 +45,29 @@
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
+        }
+        #matchResultCard {
+            display: none; /* Initially hidden */
+        }
+        .match-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        .match-item {
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+            background: white;
+        }
+        .match-item img {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 10px;
         }
     </style>
 </head>
@@ -63,12 +85,20 @@
         <div class="loader mt-3" id="loader"></div>
         <p id="result" class="text-center mt-3"></p>
     </div>
+
+    <!-- Hidden Card to Show Matched Images -->
+    <div id="matchResultCard" class="card p-4 mt-3">
+        <h3 class="text-center text-success">Matched Results</h3>
+        <div class="match-container" id="matchResults"></div>
+    </div>
 </div>
 
 <script>
     const video = document.getElementById("video");
     const loader = document.getElementById("loader");
     const resultText = document.getElementById("result");
+    const matchResultCard = document.getElementById("matchResultCard");
+    const matchResults = document.getElementById("matchResults");
 
     // Access Webcam
     navigator.mediaDevices.getUserMedia({ video: true })
@@ -90,6 +120,8 @@
         // Show loader
         loader.style.display = "block";
         resultText.innerText = "";
+        matchResultCard.style.display = "none"; // Hide results initially
+        matchResults.innerHTML = ""; // Clear previous results
 
         fetch("/match", {
             method: "POST",
@@ -99,10 +131,21 @@
         .then(response => response.json())
         .then(data => {
             loader.style.display = "none"; // Hide loader
-            if (data.status === "success") {
-                let matches = data.matches.map(img => `${img.file} (Similarity: ${img.similarity})`).join("<br>");
-                resultText.innerHTML = "Matched Images:<br>" + matches;
-                resultText.classList.add("text-success");
+
+            if (data.status === "success" && data.matches.length > 0) {
+                matchResultCard.style.display = "block"; // Show the results div
+                data.matches.forEach(match => {
+                    let matchItem = document.createElement("div");
+                    matchItem.classList.add("match-item");
+                    matchItem.innerHTML = `
+                        <img src="/dataset/image/${match.file}" alt="Matched Image">
+                        <p>${match.file} (Similarity: ${match.similarity}%)</p>
+                        <a href="/dataset/image/${match.file}" download class="btn btn-sm btn-success">
+                            <i class="fas fa-download"></i> Download
+                        </a>
+                    `;
+                    matchResults.appendChild(matchItem);
+                });
             } else {
                 resultText.innerText = data.message;
                 resultText.classList.add("text-danger");
@@ -118,5 +161,6 @@
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 </body>
 </html>

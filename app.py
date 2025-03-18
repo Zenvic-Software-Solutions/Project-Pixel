@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify ,send_from_directory
 import cv2
 import face_recognition
 import numpy as np
@@ -81,21 +81,31 @@ def upload_image():
 
     # ✅ Detect faces and extract encodings
     image = face_recognition.load_image_file(file_path)
-    encodings = face_recognition.face_encodings(image)
+    face_locations = face_recognition.face_locations(image)
+    encodings = face_recognition.face_encodings(image, face_locations)
 
     if not encodings:
         return jsonify({"status": "error", "message": "No face detected in the image."})
 
-    encoding_data = encodings[0].tobytes()  # Convert encoding to binary
-
-    # ✅ Store encoding in the database
     conn = sqlite3.connect("face_database.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO faces (filename, encoding) VALUES (?, ?)", (file.filename, encoding_data))
+
+    stored_faces = []
+    for i, encoding in enumerate(encodings):
+        encoding_data = encoding.tobytes()
+        
+        # ✅ Keep original filename but index multiple faces
+        face_indexed_filename = f"{file.filename}"
+        
+        # ✅ Store encoding in database
+        cursor.execute("INSERT INTO faces (filename, encoding) VALUES (?, ?)", (face_indexed_filename, encoding_data))
+        stored_faces.append(face_indexed_filename)
+
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "success", "message": "File uploaded and face data stored!"})
+    return jsonify({"status": "success", "message": f"{len(encodings)} faces detected and stored!", "faces": stored_faces})
+
 
 # ✅ Route 3: Face Detection Page
 @app.route("/detect")
@@ -125,47 +135,60 @@ def enhance_image(image):
 def match_faces():
     try:
         data = request.json
-        if "image" not in data:
+        if not data or "image" not in data:
             return jsonify({"status": "error", "message": "No image data received."})
 
         webcam_image = decode_base64_image(data["image"])
         if webcam_image is None:
             return jsonify({"status": "error", "message": "Invalid image format."})
 
-        # ✅ Convert to RGB and extract face encodings
+        # Convert to RGB for face recognition processing
         webcam_image_rgb = cv2.cvtColor(webcam_image, cv2.COLOR_BGR2RGB)
-        face_encodings = face_recognition.face_encodings(webcam_image_rgb)
+
+        # Detect faces and extract their encodings
+        face_locations = face_recognition.face_locations(webcam_image_rgb)
+        face_encodings = face_recognition.face_encodings(webcam_image_rgb, face_locations)
 
         if not face_encodings:
             return jsonify({"status": "error", "message": "No face detected in the image."})
 
-        # ✅ Fetch stored encodings from the database
+        # Fetch stored face encodings from the database
         conn = sqlite3.connect("face_database.db")
         cursor = conn.cursor()
         cursor.execute("SELECT filename, encoding FROM faces")
         stored_faces = cursor.fetchall()
         conn.close()
 
-        matched_images = []
-
-        for filename, encoding_blob in stored_faces:
+        matched_faces = []
+        
+        for stored_filename, encoding_blob in stored_faces:
             stored_encoding = np.frombuffer(encoding_blob, dtype=np.float64)
 
-            for face_encoding in face_encodings:
+            for face_encoding, face_location in zip(face_encodings, face_locations):
                 match = face_recognition.compare_faces([stored_encoding], face_encoding, tolerance=0.6)
                 distance = face_recognition.face_distance([stored_encoding], face_encoding)[0]
 
-                if match[0]:  # ✅ Match found
-                    matched_images.append({"file": filename, "similarity": round(1 - distance, 2)})
+                if match[0]:  # If match is found
+                    matched_faces.append({
+                        "file": stored_filename,
+                        "similarity": round((1 - distance) * 100, 2),  # Convert similarity to percentage
+                        "face_location": face_location  # Add face location data if needed
+                    })
 
-        if matched_images:
-            matched_images.sort(key=lambda x: x["similarity"], reverse=True)
-            return jsonify({"status": "success", "matches": matched_images})
+        if matched_faces:
+            matched_faces.sort(key=lambda x: x["similarity"], reverse=True)
+            return jsonify({"status": "success", "matches": matched_faces})
 
-        return jsonify({"status": "error", "message": "No matching images found."})
+        return jsonify({"status": "error", "message": "No matching faces found."})
 
     except Exception as e:
         return jsonify({"status": "error", "message": f"Error processing image: {str(e)}"})
+
+    
+# ✅ Route to serve images
+@app.route('/dataset/image/<filename>')
+def serve_image(filename):
+    return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
 if __name__ == "__main__":
     app.run(debug=True)
