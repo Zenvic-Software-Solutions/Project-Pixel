@@ -168,21 +168,24 @@ def match_faces():
                 match = face_recognition.compare_faces([stored_encoding], face_encoding, tolerance=0.6)
                 distance = face_recognition.face_distance([stored_encoding], face_encoding)[0]
 
-                if match[0]:  # If match is found
+                similarity = round((1 - distance) * 100, 2)  # Convert similarity to percentage
+
+                if match[0] and similarity >= 50:  # ✅ Only include faces with at least 50% similarity
                     matched_faces.append({
                         "file": stored_filename,
-                        "similarity": round((1 - distance) * 100, 2),  # Convert similarity to percentage
-                        "face_location": face_location  # Add face location data if needed
+                        "similarity": similarity,
+                        "face_location": face_location
                     })
 
         if matched_faces:
             matched_faces.sort(key=lambda x: x["similarity"], reverse=True)
             return jsonify({"status": "success", "matches": matched_faces})
 
-        return jsonify({"status": "error", "message": "No matching faces found."})
+        return jsonify({"status": "error", "message": "No matching faces found above 50% similarity."})
 
     except Exception as e:
         return jsonify({"status": "error", "message": f"Error processing image: {str(e)}"})
+
 
     
 # ✅ Route to serve images
