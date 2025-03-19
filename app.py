@@ -67,44 +67,74 @@ cursor.execute("""
 conn.commit()
 conn.close()
 
+
 @app.route("/upload", methods=["POST"])
-def upload_image():
-    if "file" not in request.files:
-        return jsonify({"status": "error", "message": "No file part"})
+def upload_images():
+    
+    if "files[]" not in request.files:
+        return jsonify({"status": "error", "message": "No files part in the request."})
 
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"status": "error", "message": "No selected file"})
+    files = request.files.getlist("files[]")
 
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
-    file.save(file_path)
+    if len(files) == 0:
+        return jsonify({"status": "error", "message": "No files selected."})
 
-    # ✅ Detect faces and extract encodings
-    image = face_recognition.load_image_file(file_path)
-    face_locations = face_recognition.face_locations(image)
-    encodings = face_recognition.face_encodings(image, face_locations)
-
-    if not encodings:
-        return jsonify({"status": "error", "message": "No face detected in the image."})
+    results = []
 
     conn = sqlite3.connect("face_database.db")
     cursor = conn.cursor()
 
-    stored_faces = []
-    for i, encoding in enumerate(encodings):
-        encoding_data = encoding.tobytes()
+    for file in files:
+        if file.filename == "":
+            results.append({
+                "filename": None,
+                "status": "error",
+                "message": "No selected file."
+            })
+            continue
         
-        # ✅ Keep original filename but index multiple faces
-        face_indexed_filename = f"{file.filename}"
+        file_path = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+        file.save(file_path)
+
+        image = face_recognition.load_image_file(file_path)
+        face_locations = face_recognition.face_locations(image)
+        encodings = face_recognition.face_encodings(image, face_locations)
+
+        if not encodings:
+            results.append({
+                "filename": file.filename,
+                "status": "error",
+                "message": "No face detected in the image."
+            })
+            continue
         
-        # ✅ Store encoding in database
-        cursor.execute("INSERT INTO faces (filename, encoding) VALUES (?, ?)", (face_indexed_filename, encoding_data))
-        stored_faces.append(face_indexed_filename)
+        stored_faces = []
+        for i, encoding in enumerate(encodings):
+            encoding_data = encoding.tobytes()
+
+            face_indexed_filename = f"{file.filename}"
+
+            cursor.execute(
+                "INSERT INTO faces (filename, encoding) VALUES (?, ?)",
+                (face_indexed_filename, encoding_data)
+            )
+            stored_faces.append(face_indexed_filename)
+
+        results.append({
+            "filename": file.filename,
+            "status": "success",
+            "message": f"{len(encodings)} faces detected and stored.",
+            "faces": stored_faces
+        })
 
     conn.commit()
     conn.close()
 
-    return jsonify({"status": "success", "message": f"{len(encodings)} faces detected and stored!", "faces": stored_faces})
+    return jsonify({
+        "status": "success",
+        "message": f"{len(results)} file(s) processed.",
+        "results": results
+    })
 
 
 # ✅ Route 3: Face Detection Page

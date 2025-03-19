@@ -130,10 +130,10 @@
         })
         .then(response => response.json())
         .then(data => {
-            loader.style.display = "none"; // Hide loader
+            loader.style.display = "none"; 
 
             if (data.status === "success" && data.matches.length > 0) {
-                matchResultCard.style.display = "block"; // Show the results div
+                matchResultCard.style.display = "block";
                 data.matches.forEach(match => {
                     let matchItem = document.createElement("div");
                     matchItem.classList.add("match-item");
